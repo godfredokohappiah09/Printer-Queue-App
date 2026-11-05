@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Printer Queue App</title>
+<style>
+:root{
+  --bg:#f3f6fa;--card:#ffffff;--ink:#1c2733;--muted:#5a6878;--line:#d9e1ea;
+  --wait:#b45f06;--wait-bg:#fff1dc;
+  --print:#1d5fa8;--print-bg:#e3effc;
+  --done:#1f7a4d;--done-bg:#e1f4ea;
+  --btn:#1d5fa8;--btn-ink:#ffffff;
+  color-scheme:light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1720;--card:#18222e;--ink:#e8eef5;--muted:#9fb0c2;--line:#2b3a4b;
+    --wait:#f3b562;--wait-bg:#3a2a12;
+    --print:#7db4ee;--print-bg:#16304b;
+    --done:#6fd3a0;--done-bg:#133525;
+    --btn:#4a90de;--btn-ink:#0b1420;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1720;--card:#18222e;--ink:#e8eef5;--muted:#9fb0c2;--line:#2b3a4b;
+  --wait:#f3b562;--wait-bg:#3a2a12;
+  --print:#7db4ee;--print-bg:#16304b;
+  --done:#6fd3a0;--done-bg:#133525;
+  --btn:#4a90de;--btn-ink:#0b1420;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Georgia,"Times New Roman",serif;line-height:1.55}
+main{max-width:760px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:1.7rem;margin:0 0 4px}
+h2{font-size:1.15rem;margin:0 0 10px}
+p{margin:0 0 10px}
+.sub{color:var(--muted);margin-bottom:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+.ui{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
+label{display:block;font-size:.85rem;color:var(--muted);margin-bottom:4px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.row>div{flex:1 1 140px}
+input,select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;font-size:1rem}
+button{font:inherit;font-size:1rem;padding:10px 16px;border-radius:8px;border:1px solid var(--btn);background:var(--btn);color:var(--btn-ink);cursor:pointer}
+button.ghost{background:transparent;color:var(--btn)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--print);outline-offset:2px}
+.printer{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.status{flex:1 1 220px}
+.pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:.85rem;font-family:system-ui,sans-serif}
+.p-idle{background:var(--line);color:var(--muted)}
+.p-print{background:var(--print-bg);color:var(--print)}
+.bar{height:12px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;width:0;background:var(--print);transition:width .3s}
+.ends{display:flex;justify-content:space-between;font-size:.85rem;color:var(--muted);margin-bottom:6px}
+.line{display:flex;flex-direction:column;gap:8px}
+.job{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:8px;border-left:6px solid var(--wait);background:var(--wait-bg)}
+.job.now{border-left-color:var(--print);background:var(--print-bg)}
+.job.fin{border-left-color:var(--done);background:var(--done-bg)}
+.job b{font-weight:600}
+.job span{color:var(--muted);font-size:.9rem;font-family:system-ui,sans-serif;white-space:nowrap}
+.empty{color:var(--muted);font-style:italic}
+ol.log{margin:0;padding-left:20px;font-size:.92rem;max-height:170px;overflow:auto}
+.en{color:var(--wait)}.de{color:var(--print)}.fi{color:var(--done)}
+pre{margin:0;padding:12px;background:var(--bg);border:1px solid var(--line);border-radius:8px;overflow-x:auto;font-size:.82rem;line-height:1.45}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.85rem;margin-bottom:12px;font-family:system-ui,sans-serif}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
+ul{padding-left:20px;margin:0}li{margin-bottom:6px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Printer queue</h1>
+  <p class="sub">A small app that shows how a queue keeps shared printing fair and in order.</p>
+
+  <section class="card ui">
+    <h2>1. Add a document to print</h2>
+    <div class="row">
+      <div style="flex:2 1 200px"><label for="name">Document name</label><input id="name" placeholder="e.g. Report.pdf" maxlength="30"></div>
+      <div><label for="pages">Pages</label><select id="pages"></select></div>
+      <div style="flex:0 0 auto"><button id="add">Enqueue</button></div>
+    </div>
+  </section>
+
+  <section class="card ui">
+    <h2>2. The printer</h2>
+    <div class="printer">
+      <div class="status">
+        <span class="pill p-idle" id="pill">Idle</span>
+        <p id="now" style="margin:8px 0 0">Nothing is printing.</p>
+        <div class="bar"><i id="fill"></i></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="start">Start printing</button>
+        <button id="pause" class="ghost">Pause</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card ui">
+    <h2>3. The waiting line</h2>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--wait)"></i>Waiting</span>
+      <span><i class="dot" style="background:var(--print)"></i>Printing</span>
+      <span><i class="dot" style="background:var(--done)"></i>Finished</span>
+    </div>
+    <div class="ends"><span>Front: prints next</span><span id="size">0 waiting</span><span>Back: newest</span></div>
+    <div class="line" id="queue"></div>
+  </section>
+
+  <section class="card ui">
+    <h2>Finished jobs</h2>
+    <div class="line" id="done"></div>
+  </section>
+
+  <section class="card ui">
+    <h2>What the queue just did</h2>
+    <ol class="log" id="log"></ol>
+  </section>
+
+  <section class="card">
+    <h2>Why the queue is important in this app</h2>
+    <ul>
+      <li><b>Fairness.</b> Jobs print in the order they arrive, so a person who sent a document first is never pushed aside by someone who sent one later.</li>
+      <li><b>No lost jobs.</b> The printer handles one job at a time, but people send jobs at any moment. The queue holds the extra jobs safely until the printer is free.</li>
+      <li><b>Order is kept.</b> Enqueue always adds at the back and dequeue always takes from the front, so the order of printing is predictable.</li>
+      <li><b>Speed.</b> Adding and removing a job are both quick actions, even when many jobs are waiting.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>The queue code behind the app</h2>
+    <pre>class Queue {
+  constructor() { this.items = []; }
+  enqueue(job)  { this.items.push(job); }          // add at the back
+  dequeue()     { return this.items.shift(); }     // remove from the front
+  peek()        { return this.items[0]; }          // look at the front
+  isEmpty()     { return this.items.length === 0; }
+  size()        { return this.items.length; }
+}</pre>
+  </section>
+</main>
+
+<script>
+class Queue {
+  constructor() { this.items = []; }
+  enqueue(job) { this.items.push(job); }
+  dequeue() { return this.items.shift(); }
+  peek() { return this.items[0]; }
+  isEmpty() { return this.items.length === 0; }
+  size() { return this.items.length; }
+}
+
+var q = new Queue();
+var finished = [];
+var current = null;
+var printed = 0;
+var running = false;
+var timer = null;
+var ticket = 0;
+
+var $ = function (id) { return document.getElementById(id); };
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+  });
+}
+
+for (var i = 1; i <= 20; i++) {
+  var o = document.createElement("option");
+  o.value = i; o.textContent = i;
+  if (i === 3) o.selected = true;
+  $("pages").appendChild(o);
+}
+
+function log(kind, text) {
+  var li = document.createElement("li");
+  li.className = kind;
+  li.textContent = text;
+  var l = $("log");
+  l.insertBefore(li, l.firstChild);
+}
+
+function enqueue(name, pages) {
+  ticket++;
+  var job = { id: ticket, name: name, pages: pages };
+  q.enqueue(job);
+  log("en", "Enqueue: #" + job.id + " " + name + " joined the back of the line.");
+  render();
+}
+
+function tick() {
+  if (!current) {
+    if (q.isEmpty()) { stop(); render(); return; }
+    current = q.dequeue();
+    printed = 0;
+    log("de", "Dequeue: #" + current.id + " " + current.name + " left the front and started printing.");
+  } else {
+    printed++;
+    if (printed >= current.pages) {
+      finished.unshift(current);
+      log("fi", "Finished: #" + current.id + " " + current.name + " (" + current.pages + " pages).");
+      current = null;
+      if (q.isEmpty()) { stop(); }
+    }
+  }
+  render();
+}
+
+function begin() {
+  if (running) return;
+  if (!current && q.isEmpty()) { log("de", "The queue is empty. Add a document first."); return; }
+  running = true;
+  timer = setInterval(tick, 700);
+  tick();
+}
+function stop() { running = false; clearInterval(timer); }
+
+function render() {
+  var pill = $("pill");
+  if (current) {
+    pill.className = "pill p-print"; pill.textContent = running ? "Printing" : "Paused";
+    $("now").textContent = "#" + current.id + " " + current.name + ": page " + Math.min(printed + 1, current.pages) + " of " + current.pages;
+    $("fill").style.width = (printed / current.pages * 100) + "%";
+  } else {
+    pill.className = "pill p-idle"; pill.textContent = "Idle";
+    $("now").textContent = "Nothing is printing.";
+    $("fill").style.width = "0";
+  }
+  var html = "";
+  if (current) {
+    html += '<div class="job now"><b>#' + current.id + " " + esc(current.name) + "</b><span>printing now</span></div>";
+  }
+  q.items.forEach(function (j, idx) {
+    html += '<div class="job"><b>#' + j.id + " " + esc(j.name) + "</b><span>" + (idx === 0 ? "front, " : "") + j.pages + " pages</span></div>";
+  });
+  if (!html) html = '<p class="empty">The line is empty.</p>';
+  $("queue").innerHTML = html;
+  $("size").textContent = q.size() + " waiting";
+  $("done").innerHTML = finished.length
+    ? finished.map(function (j) { return '<div class="job fin"><b>#' + j.id + " " + esc(j.name) + "</b><span>" + j.pages + " pages</span></div>"; }).join("")
+    : '<p class="empty">Nothing has finished yet.</p>';
+}
+
+$("add").onclick = function () {
+  var n = $("name").value.trim() || ("Document " + (ticket + 1));
+  enqueue(n, parseInt($("pages").value, 10));
+  $("name").value = "";
+};
+$("name").onkeydown = function (e) { if (e.key === "Enter") $("add").click(); };
+$("start").onclick = begin;
+$("pause").onclick = function () { stop(); render(); };
+
+enqueue("Maths assignment.pdf", 4);
+enqueue("Lecture notes.docx", 6);
+enqueue("Boarding pass.pdf", 1);
+</script>
+</body>
+</html>
